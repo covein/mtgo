@@ -138,11 +138,19 @@ func (cs *connStateManager) SetConnecting(dcID int) error {
 }
 
 func (cs *connStateManager) SetConnected() {
+	_ = cs.trySetConnected()
+}
+
+func (cs *connStateManager) trySetConnected() error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
+	if cs.state == ConnStateClosed {
+		return ErrClientClosed
+	}
 	cs.state = ConnStateConnected
 	cs.connectedSince = time.Now()
 	cs.lastErr = nil
+	return nil
 }
 
 func (cs *connStateManager) SetReconnecting(err error) {

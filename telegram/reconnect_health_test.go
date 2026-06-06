@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mtgo-labs/mtgo/internal/storage"
 	"github.com/mtgo-labs/mtgo/tg"
 	"github.com/mtgo-labs/mtgo/tgerr"
-	"github.com/mtgo-labs/mtgo/internal/storage"
 )
 
 func TestConnStateTransitions(t *testing.T) {
@@ -410,6 +410,40 @@ func TestCloseStopsEverything(t *testing.T) {
 	}
 	if client.reconnectMgr != nil && client.reconnectMgr.IsRunning() {
 		t.Fatal("reconnect manager should be stopped")
+	}
+}
+
+func TestStopWhileReconnectingStopsReconnectManager(t *testing.T) {
+	client, _ := NewClient(12345, "hash", &Config{InMemory: true})
+	client.storage = NewMemoryStorage()
+	client.state.SetReconnecting(errors.New("connection lost"))
+
+	client.reconnectMgr = newReconnectManager(client, backoffConfig{
+		BaseDelay:   time.Hour,
+		MaxDelay:    time.Hour,
+		MaxAttempts: 0,
+	})
+	client.reconnectMgr.Start(context.Background())
+
+	client.Stop()
+
+	if !client.state.IsClosed() {
+		t.Fatalf("state = %v, want closed", client.state.State())
+	}
+	if client.reconnectMgr.IsRunning() {
+		t.Fatal("reconnect manager should stop when the client is stopped")
+	}
+}
+
+func TestClosedStateCannotBecomeConnected(t *testing.T) {
+	state := newConnStateManager()
+	state.SetClosed()
+
+	if err := state.trySetConnected(); !errors.Is(err, ErrClientClosed) {
+		t.Fatalf("trySetConnected() error = %v, want ErrClientClosed", err)
+	}
+	if got := state.State(); got != ConnStateClosed {
+		t.Fatalf("state = %v, want closed", got)
 	}
 }
 

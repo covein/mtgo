@@ -867,7 +867,7 @@ func (c *Client) Stop() {
 	c.mu.Unlock()
 
 	c.stopOnce.Do(func() { close(stopCh) })
-	_ = c.Disconnect()
+	c.Close()
 }
 
 func (c *Client) Idle() {
@@ -1167,7 +1167,17 @@ func (c *Client) startSession(sess *session.Session, sessionTp *sessionTransport
 	}
 	c.Log.Info("encrypted session started")
 
+	c.mu.Lock()
+	if err := c.state.trySetConnected(); err != nil {
+		c.mu.Unlock()
+		sess.Stop()
+		return err
+	}
+	c.session = sess
+	c.state.SetDC(c.initialDCID(c.storage))
 	c.sessionWg.Add(1)
+	c.mu.Unlock()
+
 	go func() {
 		defer c.sessionWg.Done()
 		<-sess.SessionDone()
@@ -1175,12 +1185,6 @@ func (c *Client) startSession(sess *session.Session, sessionTp *sessionTransport
 			c.triggerReconnect(fmt.Errorf("session exited"))
 		}
 	}()
-
-	c.mu.Lock()
-	c.session = sess
-	c.state.SetConnected()
-	c.state.SetDC(c.initialDCID(c.storage))
-	c.mu.Unlock()
 	return nil
 }
 
@@ -1437,6 +1441,9 @@ func (c *Client) Disconnect() error {
 	if err := c.state.requireConnected(); err != nil {
 		return err
 	}
+	// Publish the intentional disconnect before stopping the session so its
+	// watcher does not treat SessionDone as an unexpected connection loss.
+	c.state.SetDisconnected(nil)
 	c.stopPlugins(context.Background())
 	c.cleanupSessions()
 	return nil
@@ -1446,9 +1453,11 @@ func (c *Client) Disconnect() error {
 // After Close, the client cannot be reconnected; create a new Client instead.
 // It is safe to call Close on an already-closed client.
 func (c *Client) Close() {
+	// Block reconnect triggers before stopping sessions. In-flight connection
+	// attempts also reject their final transition once the client is closed.
+	c.state.SetClosed()
 	c.stopPlugins(context.Background())
 	c.cleanupSessions()
-	c.state.SetClosed()
 }
 
 func (c *Client) Health() HealthStatus {
