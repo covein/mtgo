@@ -1,6 +1,6 @@
 ---
 name: mtgo
-description: "Build Telegram bots and userbots in Go using mtgo — a fast, idiomatic MTProto client. Use for any Telegram-related Go project — bots with inline keyboards and callbacks, userbots acting on behalf of a user account, session management, media upload/download, authentication via bot token or phone number or QR code or session strings, group creation and management, middleware chains, plugins, i18n, MTProxy, business connections, paid media, secret chats, gifts, live broadcasting, and multi-client setups. Also use when the user mentions MTProto, Telegram MTProto API, or wants to interact with Telegram programmatically from Go. Triggers on Telegram bot in Go, Telegram userbot, mtgo, MTProto Go, Telegram automation Go, and any request to build, test, or manage Telegram bots or userbots. Covers BotFather setup, storage backends (SQLite), session import from Telethon/Pyrogram, and the mtgo-cli tool for quick Telegram operations without writing code."
+description: "Build Telegram bots and userbots in Go using mtgo — a fast, idiomatic MTProto client. Use for any Telegram-related Go project — bots with inline keyboards and callbacks, Rich Messages and Rich Markdown/HTML, streaming rich message drafts, userbots acting on behalf of a user account, session management, media upload/download, authentication via bot token or phone number or QR code or session strings, group creation and management, middleware chains, plugins, i18n, MTProxy, business connections, paid media, secret chats, gifts, live broadcasting, and multi-client setups. Also use when the user mentions MTProto, Telegram MTProto API, Telegram Rich Message, Rich Markdown, sendRichMessage, sendRichMessageDraft, or wants to interact with Telegram programmatically from Go. Triggers on Telegram bot in Go, Telegram userbot, mtgo, MTProto Go, Telegram automation Go, and any request to build, test, or manage Telegram bots or userbots. Covers BotFather setup, storage backends (SQLite), session import from Telethon/Pyrogram, and the mtgo-cli tool for quick Telegram operations without writing code."
 ---
 
 # mtgo — Telegram MTProto Client for Go
@@ -39,6 +39,7 @@ go doc github.com/mtgo-labs/mtgo/telegram/params SendMessage
 
 For advanced topics (full Config reference, userbot auth, group management, BotFather, testing), see `references/advanced.md`.
 For newer features (business connections, secret chats, gifts, live broadcasting, TDLib JSON, account privacy, lifecycle handlers), see `references/new-features.md`.
+For Telegram Rich Message syntax, generation rules, sending, editing, and streaming drafts, read `references/rich-messages.md` before producing or reviewing rich content.
 
 ## Client Creation
 
@@ -401,6 +402,40 @@ ctx.Reply("Bold Italic Code", &params.SendMessage{
 })
 ```
 
+### Rich Messages
+
+Use the dedicated rich message methods for structured reports, headings, tables,
+formulas, footnotes, collapsible details, and HTTP media blocks. Do not pass Rich
+Markdown through `SendMessage`; it is a distinct message format.
+
+```go
+msg, err := client.SendRichMessage(
+    ctx,
+    chatID,
+    "# Report\n\n| Metric | Value |\n|---|---:|\n| Status | **Ready** |",
+    &params.SendMessage{ParseMode: params.ParseModeRichMarkdown},
+)
+```
+
+Stream partial AI output to a private chat by repeatedly using the same non-zero
+draft ID, then send the complete content as a persistent message:
+
+```go
+draftID := client.RandomID()
+
+err := client.SendRichMessageDraft(ctx, chatID, draftID, partialMarkdown)
+msg, err := client.SendRichMessage(
+    ctx,
+    chatID,
+    completeMarkdown,
+    &params.SendMessage{ParseMode: params.ParseModeRichMarkdown},
+)
+```
+
+The draft is an ephemeral 30-second preview implemented through
+`messages.setTyping`; it does not become a saved message automatically. Read
+`references/rich-messages.md` before generating Rich Markdown or Rich HTML.
+
 ## Media
 
 ### Sending
@@ -544,3 +579,4 @@ See reference files for detailed coverage:
 
 - **`references/advanced.md`** — Full Config reference, userbot authentication (phone/QR/session), advanced RPC (InvokeRaw, InvokeWithRawResult, JSON RPC), group management, BotFather bot creation, testing bots with userbots
 - **`references/new-features.md`** — Business connections, secret chats, cloud password management, gifts & star gifts, paid media, live broadcasting (FFmpeg), TDLib JSON compatibility, account privacy settings, profile management, lifecycle handlers, premium features, invite links, forum topics
+- **`references/rich-messages.md`** — Telegram Rich Markdown and Rich HTML syntax, limits, media rules, mtgo sending/editing APIs, and streaming draft workflow

@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -13,6 +14,19 @@ import (
 	"github.com/mtgo-labs/mtgo/telegram/types"
 	"github.com/mtgo-labs/mtgo/tg"
 )
+
+type destructiveSessionIDStorage struct {
+	storage.Storage
+	setSessionIDCalls int
+}
+
+func (s *destructiveSessionIDStorage) SetSessionID(sessionID string) error {
+	s.setSessionIDCalls++
+	if err := s.SetAuthKey(nil); err != nil {
+		return err
+	}
+	return s.Storage.SetSessionID(sessionID)
+}
 
 func TestNewClientDefaults(t *testing.T) {
 	c, _ := NewClient(12345, "deadbeef", nil)
@@ -64,6 +78,40 @@ func TestNewClientDefaults(t *testing.T) {
 	}
 	if c.cfg.TransportMode != TransportModeAbridged {
 		t.Errorf("TransportMode = %q, want %q", c.cfg.TransportMode, TransportModeAbridged)
+	}
+}
+
+func TestInitStoragePreservesExistingNamedSession(t *testing.T) {
+	base := NewMemoryStorage()
+	authKey := bytes.Repeat([]byte{1}, 256)
+	if err := base.SetSessionID("existing"); err != nil {
+		t.Fatalf("SetSessionID() error = %v", err)
+	}
+	if err := base.SetAuthKey(authKey); err != nil {
+		t.Fatalf("SetAuthKey() error = %v", err)
+	}
+	st := &destructiveSessionIDStorage{Storage: base}
+	c, err := NewClient(1, "hash", &Config{
+		SessionName: "existing",
+		Storage:     st,
+	})
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	resolved, _, err := c.initStorage()
+	if err != nil {
+		t.Fatalf("initStorage() error = %v", err)
+	}
+	if st.setSessionIDCalls != 0 {
+		t.Fatalf("SetSessionID() calls = %d, want 0", st.setSessionIDCalls)
+	}
+	gotAuthKey, err := resolved.AuthKey()
+	if err != nil {
+		t.Fatalf("AuthKey() error = %v", err)
+	}
+	if !bytes.Equal(gotAuthKey, authKey) {
+		t.Fatal("initStorage() reset the existing auth key")
 	}
 }
 

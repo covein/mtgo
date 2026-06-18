@@ -926,7 +926,7 @@ func (c *Client) Stop() {
 	c.mu.Unlock()
 
 	c.stopOnce.Do(func() { close(stopCh) })
-	_ = c.Disconnect()
+	c.Close()
 }
 
 func (c *Client) Idle() {
@@ -942,7 +942,7 @@ func (c *Client) Idle() {
 func (c *Client) connectToDC(dcID int, timeout time.Duration) error {
 	c.updateConfig(func(cfg *Config) { cfg.DC = dcID })
 	c.migratingDC.Store(true)
-	return c.connectTransport(timeout)
+	return c.connectTransportMode(timeout, false)
 }
 
 func (c *Client) initialDCID(st storage.Storage) int {
@@ -958,6 +958,10 @@ func (c *Client) initialDCID(st storage.Storage) int {
 }
 
 func (c *Client) connectTransport(timeout time.Duration) error {
+	return c.connectTransportMode(timeout, true)
+}
+
+func (c *Client) connectTransportMode(timeout time.Duration, runPostConnect bool) error {
 	st, migratingDC, err := c.initStorage()
 	if err != nil {
 		return err
@@ -993,7 +997,9 @@ func (c *Client) connectTransport(timeout time.Duration) error {
 		return err
 	}
 
-	c.postConnect()
+	if runPostConnect {
+		c.postConnect()
+	}
 	return nil
 }
 
@@ -1033,7 +1039,11 @@ func (c *Client) initStorage() (storage.Storage, bool, error) {
 	c.mu.Unlock()
 
 	if c.config().SessionName != "" {
-		if err := st.SetSessionID(c.config().SessionName); err != nil {
+		currentSessionID, err := st.SessionID()
+		if err != nil || currentSessionID != c.config().SessionName {
+			err = st.SetSessionID(c.config().SessionName)
+		}
+		if err != nil {
 			return nil, false, fmt.Errorf("set session id %q: %w", c.config().SessionName, err)
 		}
 	}
@@ -1258,7 +1268,17 @@ func (c *Client) startSession(sess *session.Session, sessionTp *sessionTransport
 	}
 	c.Log.Info("encrypted session started")
 
+	c.mu.Lock()
+	if err := c.state.trySetConnected(); err != nil {
+		c.mu.Unlock()
+		sess.Stop()
+		return err
+	}
+	c.session = sess
+	c.state.SetDC(c.initialDCID(c.storage))
 	c.sessionWg.Add(1)
+	c.mu.Unlock()
+
 	go func() {
 		defer c.sessionWg.Done()
 		<-sess.SessionDone()
@@ -1266,12 +1286,6 @@ func (c *Client) startSession(sess *session.Session, sessionTp *sessionTransport
 			c.triggerReconnect(fmt.Errorf("session exited"))
 		}
 	}()
-
-	c.mu.Lock()
-	c.session = sess
-	c.state.SetConnected()
-	c.state.SetDC(c.initialDCID(c.storage))
-	c.mu.Unlock()
 	return nil
 }
 
@@ -1320,6 +1334,10 @@ func (c *Client) authenticateUser(st storage.Storage, timeout time.Duration) err
 			if err != nil {
 				var rpcErr *tgerr.Error
 				if errors.As(err, &rpcErr) && rpcErr.Code == 303 && rpcErr.Type == "USER_MIGRATE" {
+					// This session is intentionally replaced on the bot's home DC.
+					// Mark it disconnected before Stop so its watcher does not
+					// start the reconnect manager.
+					c.state.setConnected(false)
 					c.cleanupSessions(false)
 					c.Log.Debug("migrating to DC ", rpcErr.Argument)
 					return c.connectToDC(rpcErr.Argument, timeout)
@@ -1562,6 +1580,9 @@ func (c *Client) Disconnect() error {
 	if err := c.state.requireConnected(); err != nil {
 		return err
 	}
+	// Publish the intentional disconnect before stopping the session so its
+	// watcher does not treat SessionDone as an unexpected connection loss.
+	c.state.SetDisconnected(nil)
 	c.stopPlugins(context.Background())
 	c.cleanupSessions()
 	return nil
@@ -1571,16 +1592,18 @@ func (c *Client) Disconnect() error {
 // After Close, the client cannot be reconnected; create a new Client instead.
 // It is safe to call Close on an already-closed client.
 func (c *Client) Close() {
+	// Block reconnect triggers before stopping sessions. In-flight connection
+	// attempts also reject their final transition once the client is closed.
+	c.state.SetClosed()
 	c.stopPlugins(context.Background())
 	c.cleanupSessions()
-	// Stop the RSA key rotation watchdog (no goroutine leak — Principle V).
+	// Stop the RSA key rotation watchdog.
 	if c.keyWatchdogCancel != nil {
 		c.keyWatchdogCancel()
 	}
 	if c.keyWatchdog != nil {
 		c.keyWatchdog.Wait()
 	}
-	c.state.SetClosed()
 }
 
 func (c *Client) Health() HealthStatus {

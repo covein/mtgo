@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/mtgo-labs/mtgo/telegram/types"
+	"github.com/mtgo-labs/mtgo/tg"
 )
 
 func TestChatType(t *testing.T) {
@@ -38,6 +39,8 @@ func TestParseMode(t *testing.T) {
 		{"default", types.ParseModeDefault, "default"},
 		{"markdown", types.ParseModeMarkdown, "markdown"},
 		{"html", types.ParseModeHTML, "html"},
+		{"rich_markdown", types.ParseModeRichMarkdown, "rich_markdown"},
+		{"rich_html", types.ParseModeRichHTML, "rich_html"},
 		{"disabled", types.ParseModeDisabled, "disabled"},
 	}
 	for _, tt := range tests {
@@ -46,6 +49,25 @@ func TestParseMode(t *testing.T) {
 				t.Errorf("types.ParseMode.%s = %q, want %q", tt.name, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestParseMessageRichMessage(t *testing.T) {
+	rich := &tg.RichMessage{
+		Blocks: []tg.PageBlockClass{
+			&tg.PageBlockParagraph{
+				Text: &tg.TextPlain{Text: "hello"},
+			},
+		},
+	}
+	msg := types.ParseMessage(&tg.Message{
+		ID:          1,
+		PeerID:      &tg.PeerUser{UserID: 10},
+		RichMessage: rich,
+	}, nil)
+
+	if msg == nil || msg.RichMessage != rich {
+		t.Fatalf("RichMessage = %#v, want %#v", msg, rich)
 	}
 }
 

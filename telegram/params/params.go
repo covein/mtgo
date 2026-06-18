@@ -31,6 +31,14 @@ const (
 	// ParseModeHTML interprets message text as HTML-formatted content.
 	ParseModeHTML ParseMode = "html"
 
+	// ParseModeRichMarkdown sends text using Telegram's Rich Message Markdown
+	// format instead of legacy message entities.
+	ParseModeRichMarkdown ParseMode = "rich_markdown"
+
+	// ParseModeRichHTML sends text using Telegram's Rich Message HTML format
+	// instead of legacy message entities.
+	ParseModeRichHTML ParseMode = "rich_html"
+
 	// ParseModeDisabled disables all parsing; the message text is sent
 	// verbatim without any formatting applied.
 	ParseModeDisabled ParseMode = "disabled"
@@ -39,6 +47,10 @@ const (
 	Markdown ParseMode = "markdown"
 	// HTML is a shorthand for ParseModeHTML.
 	HTML ParseMode = "html"
+	// RichMarkdown is a shorthand for ParseModeRichMarkdown.
+	RichMarkdown ParseMode = "rich_markdown"
+	// RichHTML is a shorthand for ParseModeRichHTML.
+	RichHTML ParseMode = "rich_html"
 	// MarkdownV2 interprets message text as MarkdownV2-formatted content.
 	MarkdownV2 ParseMode = "MarkdownV2"
 	// Disabled is a shorthand for ParseModeDisabled.

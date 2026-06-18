@@ -302,10 +302,14 @@ func (c *Client) reconnectOnce() error {
 	}()
 
 	c.mu.Lock()
+	if err := c.state.trySetConnected(); err != nil {
+		c.mu.Unlock()
+		sess.Stop()
+		return err
+	}
 	c.session = sess
 	c.mu.Unlock()
 
-	c.state.SetConnected()
 	c.state.SetDC(dcID)
 	c.state.ResetReconnectCount()
 

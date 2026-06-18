@@ -434,8 +434,8 @@ type Session struct {
 	// Production-hardening fields (end of struct to keep hot-path fields in
 	// the first 6 cache lines — only accessed when features are enabled).
 	containerTracker *ContainerTracker
-	floodWaits        *FloodWaitQueue
-	outboundBatcher   *OutboundBatcher
+	floodWaits       *FloodWaitQueue
+	outboundBatcher  *OutboundBatcher
 }
 
 // SetOnPanic sets a callback invoked when a dispatchUpdate goroutine panics.
@@ -1095,31 +1095,7 @@ func (s *Session) Invoke(ctx context.Context, query tg.TLObject, retries int, ti
 				return obj, nil
 			}
 			parsed := tgerr.New(int(rpcErr.ErrorCode), rpcErr.ErrorMessage)
-			if wait, ok := parseFloodWait(rpcErr.ErrorMessage); ok {
-				msgID := s.msgFactory.AllocateMsgID()
-				s.floodWaits.Delay(query, msgID, wait)
-				if s.log != nil {
-					s.log.Warnf("flood wait detected method=%s duration=%v", methodName, wait)
-					s.log.Warnf("flood wait delayed method=%s msg_id=%d duration=%v", methodName, msgID, wait)
-				}
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case <-s.done:
-					if s.log != nil {
-						s.log.Warnf("flood wait rejected method=%s msg_id=%d err=%v", methodName, msgID, ErrSessionClosed)
-					}
-					return nil, ErrSessionClosed
-				case <-time.After(wait):
-				}
-				s.floodWaits.Ready()
-				if s.log != nil {
-					s.log.Warnf("flood wait retry method=%s msg_id=%d duration=%v", methodName, msgID, wait)
-				}
-				maxAttempts++
-				continue
-			}
-			if rpcErr.ErrorCode == 401 || rpcErr.ErrorCode == 400 || rpcErr.ErrorCode == 403 {
+			if rpcErr.ErrorCode == 400 || rpcErr.ErrorCode == 401 || rpcErr.ErrorCode == 403 || rpcErr.ErrorCode == 420 {
 				return nil, fmt.Errorf("invoke %s: %w", methodName, parsed)
 			}
 			lastErr = fmt.Errorf("invoke %s: %w", methodName, parsed)
@@ -2026,13 +2002,13 @@ const maxRecoveryQueries = 1024
 type TempKeyManager struct {
 	dcID       int
 	testMode   bool
-	permKey    []byte        // permanent auth key
-	tempKey    []byte        // current temp auth key
-	tempKeyID  int64         // SHA1-based temp key ID
-	expiresAt  time.Time     // when the temp key expires
-	bound      bool          // whether auth.bindTempAuthKey succeeded
-	enabled    bool          // PFS mode flag
-	persistKey bool          // whether to persist temp key to storage
+	permKey    []byte    // permanent auth key
+	tempKey    []byte    // current temp auth key
+	tempKeyID  int64     // SHA1-based temp key ID
+	expiresAt  time.Time // when the temp key expires
+	bound      bool      // whether auth.bindTempAuthKey succeeded
+	enabled    bool      // PFS mode flag
+	persistKey bool      // whether to persist temp key to storage
 	storage    storage.Storage
 	mu         sync.Mutex
 }

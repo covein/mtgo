@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -841,6 +842,52 @@ func TestSessionInvokeRetriesBadServerSalt(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Invoke() timed out")
+	}
+}
+
+func TestSessionInvokeDoesNotRetryFloodWait(t *testing.T) {
+	s := newSessionWithAuthKey(t)
+	mt := newMockTransport()
+	s.SetTransport(mt)
+
+	cleanup := startTestWorkers(s, mt)
+	defer cleanup()
+
+	invokeDone := make(chan error, 1)
+	go func() {
+		_, err := s.Invoke(context.Background(), &tg.PingRequest{PingID: 123}, 3, 5*time.Second)
+		invokeDone <- err
+	}()
+
+	sent := <-mt.sendCh
+	msg := unpackIncoming(sent, s)
+	if msg == nil {
+		t.Fatal("sent message did not decode")
+	}
+	mt.recvCh <- makeEncryptedResponse(s, makeServerMsgID(), uint32(s.msgFactory.AllocateSeqNo(false)), &tg.RPCResult{
+		ReqMsgID: msg.MsgID,
+		Result: &tg.RPCError{
+			ErrorCode:    420,
+			ErrorMessage: "FLOOD_WAIT_10",
+		},
+	})
+
+	select {
+	case err := <-invokeDone:
+		if err == nil {
+			t.Fatal("Invoke() error = nil, want FLOOD_WAIT")
+		}
+		if !strings.Contains(err.Error(), "FLOOD_WAIT") {
+			t.Fatalf("Invoke() error = %v, want FLOOD_WAIT", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Invoke() timed out")
+	}
+
+	select {
+	case <-mt.sendCh:
+		t.Fatal("Invoke() retried FLOOD_WAIT")
+	default:
 	}
 }
 

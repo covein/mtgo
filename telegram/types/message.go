@@ -67,6 +67,8 @@ type Message struct {
 	// Entities contains formatting and special entity markers (mentions, URLs,
 	// bold, etc.) found in Text.
 	Entities []*MessageEntity
+	// RichMessage contains Telegram's structured rich message payload.
+	RichMessage *tg.RichMessage
 	// ReplyMarkup is the inline or reply keyboard attached to the message.
 	ReplyMarkup *ReplyMarkup
 	// Out is true when the message was sent by the current user.
@@ -486,15 +488,16 @@ func ParseMessage(raw tg.MessageClass, pm *PeerMap) *Message {
 
 func parseRegularMessage(raw *tg.Message, pm *PeerMap) *Message {
 	m := &Message{
-		ID:        raw.ID,
-		Date:      time.Unix(int64(raw.Date), 0),
-		Text:      raw.Message,
-		Out:       raw.Out,
-		Outgoing:  raw.Out,
-		Mentioned: raw.Mentioned,
-		Silent:    raw.Silent,
-		Pinned:    raw.Pinned,
-		Raw:       raw,
+		ID:          raw.ID,
+		Date:        time.Unix(int64(raw.Date), 0),
+		Text:        raw.Message,
+		Out:         raw.Out,
+		Outgoing:    raw.Out,
+		Mentioned:   raw.Mentioned,
+		Silent:      raw.Silent,
+		Pinned:      raw.Pinned,
+		RichMessage: raw.RichMessage,
+		Raw:         raw,
 	}
 	if raw.FromID != nil {
 		m.FromID = getPeerID(raw.FromID)

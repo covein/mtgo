@@ -285,16 +285,29 @@ func (c *Client) DeleteMessages(ctx context.Context, chatID int64, messageIDs []
 	c.Log.Debugf("DeleteMessages chat_id=%d count=%d", chatID, len(messageIDs))
 	opt := params.GetOptDef(&params.DeleteMessages{}, opts...)
 
-	_, err := resolvePeer(c, chatID)
+	peer, err := resolvePeer(c, chatID)
+	if err != nil {
+		peer, err = c.ResolvePeer(ctx, chatID)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("resolve peer: %w", err)
 	}
-
 	rpc := c.Raw()
-	affected, err := rpc.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-		Revoke: opt.Revoke,
-		ID:     messageIDs,
-	})
+	var affected *tg.MessagesAffectedMessages
+	if channel, ok := peer.(*tg.InputPeerChannel); ok {
+		affected, err = rpc.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{
+			Channel: &tg.InputChannel{
+				ChannelID:  channel.ChannelID,
+				AccessHash: channel.AccessHash,
+			},
+			ID: messageIDs,
+		})
+	} else {
+		affected, err = rpc.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
+			Revoke: opt.Revoke,
+			ID:     messageIDs,
+		})
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -515,6 +528,9 @@ func (c *Client) GetChatHistory(ctx context.Context, chatID int64, limit int, of
 func (c *Client) SendMedia(ctx context.Context, chatID int64, media tg.InputMediaClass, caption string, opts ...*params.SendMessage) (*types.Message, error) {
 	c.Log.Debugf("SendMedia chat_id=%d", chatID)
 	peer, err := resolvePeer(c, chatID)
+	if err != nil {
+		peer, err = c.ResolvePeer(ctx, chatID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve peer: %w", err)
 	}
@@ -836,6 +852,9 @@ func (c *Client) ForwardMediaGroup(ctx context.Context, chatID int64, fromChatID
 //   - the RPC call fails
 func (c *Client) SendMediaGroup(ctx context.Context, chatID int64, items []*tg.InputSingleMedia, opts ...*params.SendMessage) ([]*types.Message, error) {
 	peer, err := resolvePeer(c, chatID)
+	if err != nil {
+		peer, err = c.ResolvePeer(ctx, chatID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve peer: %w", err)
 	}

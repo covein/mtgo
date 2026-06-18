@@ -76,7 +76,7 @@ Key packages:
 
 ```bash
 go run cmd/tlgen/main.go    # regenerates tg/*_gen.go files
-go run cmd/errgen/main.go   # regenerates tgerr/errors_gen.go
+go run cmd/errgen/main.go compiler/errors_source tgerr/errors_gen.go   # regenerates tgerr/errors_gen.go
 ```
 
 Never edit `*_gen.go` files directly. If a TL type is missing or wrong, fix the schema/compiler and regenerate.

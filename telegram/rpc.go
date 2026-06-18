@@ -52,8 +52,12 @@ func (ci *clientInvoker) RPCInvoke(ctx context.Context, input tg.TLObject, decod
 		return nil, err
 	}
 	if rpcErr, ok := result.(*tg.RPCError); ok {
-		ci.client.Log.Warnf("RPC error code=%d msg=%s", rpcErr.ErrorCode, rpcErr.ErrorMessage)
 		parsed := tgerr.New(int(rpcErr.ErrorCode), rpcErr.ErrorMessage)
+		if shouldReturnMigrationToCaller(input, parsed) {
+			ci.client.Log.Infof("bot authorization migrating to DC %d", parsed.Argument)
+		} else {
+			ci.client.Log.Warnf("RPC error code=%d msg=%s", rpcErr.ErrorCode, rpcErr.ErrorMessage)
+		}
 		if parsed.Code == 303 {
 			if shouldReturnMigrationToCaller(input, parsed) {
 				return nil, parsed

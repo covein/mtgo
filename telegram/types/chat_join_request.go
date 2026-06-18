@@ -58,15 +58,28 @@ func ParseChatJoinRequest(
 		return nil
 	}
 	r := &ChatJoinRequest{
-		FromUser: users[raw.UserID],
-		Date:     time.Unix(int64(raw.Date), 0),
-		Bio:      raw.About,
+		Date: time.Unix(int64(raw.Date), 0),
+		Bio:  raw.About,
+	}
+	if user := users[raw.UserID]; user != nil {
+		r.FromUser = user
+	} else {
+		r.FromUser = &User{ID: raw.UserID}
 	}
 	switch p := raw.Peer.(type) {
 	case *tg.PeerChat:
-		r.Chat = chats[p.ChatID]
+		if chat := chats[-p.ChatID]; chat != nil {
+			r.Chat = chat
+		} else {
+			r.Chat = &Chat{ID: -p.ChatID, Type: ChatTypeGroup}
+		}
 	case *tg.PeerChannel:
-		r.Chat = chats[p.ChannelID]
+		chatID := channelChatID(p.ChannelID)
+		if chat := chats[chatID]; chat != nil {
+			r.Chat = chat
+		} else {
+			r.Chat = &Chat{ID: chatID, Type: ChatTypeSupergroup}
+		}
 	}
 	if inv, ok := raw.Invite.(*tg.ChatInviteExported); ok {
 		r.InviteLink = ParseChatInviteLink(inv, nil)
